@@ -78,7 +78,17 @@ App ID 和私钥没配也不影响——`auto` 直接落到 `gh`，只要有 `gh
 | `workflow_dispatch` | 手动触发 Actions | `workflow` `ref` `inputs` |
 | `file_get` | 读文件 | `path` `ref` |
 | `file_put` | 写文件并提交 | `path` `content` `message` `ref` |
-| `scan` | 扫所有仓库的 open issue | — |
+| `issue_update` | 改标题/正文/状态/标签/assignee | `number` `title` `labels` |
+| `comment_list` | 读评论 | `number` |
+| `comment_delete` | 删评论 | `number`（=comment id） |
+| `pr_create` | 开 PR | `head` `base` `title` |
+| `pr_review` | 审 PR | `number` `event` `body` |
+| `pr_merge` | 合并 PR | `number` `merge_method` |
+| `workflow_list` | 列 Actions | — |
+| `run_list` | 列最近运行 | — |
+| `file_list` | 列目录 | `path` |
+| `search` | 搜 issue/PR/仓库/代码 | `query` `scope` |
+| `scan` | 扫所有仓库的 open issue（默认覆盖全部安装） | — |
 | `api` | 直接打任意 GitHub API | `endpoint` `method` `payload` |
 
 ## 例子
