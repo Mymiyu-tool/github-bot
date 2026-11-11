@@ -6,7 +6,7 @@
 # Timeout: 90
 # Parameters:
 # {"type":"object","properties":{
-#   "action":{"type":"string","enum":["status","installations","repos","token","repo","issue_list","issue_get","issue_create","issue_comment","pr_list","pr_get","pr_comment","release_list","workflow_dispatch","file_get","file_put","branch_list"],"description":"What to do. Default status"},
+#   "action":{"type":"string","enum":["status","installations","repos","token","repo","issue_list","issue_get","issue_create","issue_comment","issue_close","pr_list","pr_get","pr_comment","release_list","workflow_dispatch","file_get","file_put","branch_list","scan","api"],"description":"What to do. Default status"},
 #   "app_id":{"type":"string","description":"GitHub App ID; falls back to the config file"},
 #   "key":{"type":"string","description":"Path to the app private key .pem; falls back to the config file"},
 #   "installation_id":{"type":"integer","description":"Installation id; auto-discovered when omitted"},
@@ -22,6 +22,9 @@
 #   "message":{"type":"string","description":"Commit message for file_put"},
 #   "workflow":{"type":"string","description":"Workflow file name, e.g. package.yml"},
 #   "inputs":{"type":"object","description":"workflow_dispatch inputs"},
+#   "endpoint":{"type":"string","description":"For action=api: path like /repos/O/R/issues or a full URL"},
+#   "method":{"type":"string","enum":["GET","POST","PATCH","PUT","DELETE"],"description":"For action=api, default GET"},
+#   "payload":{"type":"object","description":"For action=api: JSON body"},
 #   "state":{"type":"string","enum":["open","closed","all"],"description":"Issue/PR filter, default open"},
 #   "limit":{"type":"integer","description":"List size, default 20"}
 # },"required":[]}
@@ -319,6 +322,40 @@ def main():
             body["sha"] = cur["sha"]
         status, data = request("PUT", repo_path(a, f"/contents/{urllib.parse.quote(p)}"), token, body)
         print(json.dumps({"status": status, "commit": data.get("commit", {}).get("sha"), "url": data.get("content", {}).get("html_url")}, ensure_ascii=False))
+        return
+
+    if action == "issue_close":
+        status, data = request("PATCH", repo_path(a, f"/issues/{a.get('number')}"), token, {"state": "closed"})
+        print(json.dumps({"status": status, "state": data.get("state"), "url": data.get("html_url")}, ensure_ascii=False))
+        return
+
+    if action == "scan":
+        if kind == "app":
+            status, data = request("GET", "/installation/repositories?per_page=100", token)
+            repos = [r["full_name"] for r in data.get("repositories", [])]
+        else:
+            status, data = request("GET", "/user/repos?per_page=100&sort=updated", token)
+            repos = [r["full_name"] for r in data if r.get("open_issues_count", 0) > 0]
+        out = []
+        for full in repos:
+            s, issues = request("GET", f"/repos/{full}/issues?state=open&per_page=50", token)
+            if s != 200 or not isinstance(issues, list):
+                continue
+            for i in issues:
+                if "pull_request" in i:
+                    continue
+                out.append({"repo": full, "number": i["number"], "title": i["title"], "author": i["user"]["login"]})
+        out.sort(key=lambda x: x["repo"])
+        print(json.dumps(out, ensure_ascii=False, indent=1))
+        return
+
+    if action == "api":
+        endpoint = a.get("endpoint")
+        if not endpoint:
+            raise SystemExit("api 需要 endpoint")
+        method = (a.get("method") or "GET").upper()
+        status, data = request(method, endpoint, token, a.get("payload"))
+        print(json.dumps({"status": status, "data": data}, ensure_ascii=False)[:4000])
         return
 
     raise SystemExit(f"未知动作：{action}")

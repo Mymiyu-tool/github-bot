@@ -71,12 +71,15 @@ App ID 和私钥没配也不影响——`auto` 直接落到 `gh`，只要有 `gh
 | `issue_get` | issue 详情 | `number` |
 | `issue_create` | 开 issue | `title` `body` |
 | `issue_comment` | 评论 issue | `number` `body` |
+| `issue_close` | 关闭 issue | `number` |
 | `pr_list` / `pr_get` | PR 列表 / 详情 | `state` `number` |
 | `pr_comment` | 评论 PR | `number` `body` |
 | `release_list` | release 与资产 | — |
 | `workflow_dispatch` | 手动触发 Actions | `workflow` `ref` `inputs` |
 | `file_get` | 读文件 | `path` `ref` |
 | `file_put` | 写文件并提交 | `path` `content` `message` `ref` |
+| `scan` | 扫所有仓库的 open issue | — |
+| `api` | 直接打任意 GitHub API | `endpoint` `method` `payload` |
 
 ## 例子
 
