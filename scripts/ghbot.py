@@ -14,6 +14,7 @@
 #   "owner":{"type":"string","description":"Org or user, e.g. linuztx"},
 #   "repo":{"type":"string","description":"Repository name"},
 #   "number":{"type":"integer","description":"Issue or PR number"},
+#   "comment_id":{"type":"integer","description":"For comment_delete"},
 #   "title":{"type":"string"},
 #   "body":{"type":"string"},
 #   "labels":{"type":"array","items":{"type":"string"},"description":"Labels to set"},
@@ -209,7 +210,7 @@ def slim_issue(i):
     }
 
 
-def scan_installation(tok, inst, limit, timeout=35):
+def scan_installation(tok, inst):
     """Search first (one request), fall back to per-repo reads with threads."""
     account = inst.get("account", {}).get("login", "")
     kind = inst.get("account", {}).get("type", "User")
@@ -368,7 +369,7 @@ def main():
         return
 
     if action == "comment_delete":
-        cid = a.get("number") or a.get("comment_id")
+        cid = a.get("comment_id") or a.get("number")
         s, d = request("DELETE", repo_path(a, f"/issues/comments/{cid}"), token)
         print(json.dumps({"status": s, "ok": s == 204}, ensure_ascii=False))
         return
@@ -379,7 +380,7 @@ def main():
         return
 
     if action == "pr_create":
-        body = {"title": a.get("title") or a.get("body", "update"), "head": a.get("head"),
+        body = {"title": a.get("title") or "Update from bot", "head": a.get("head"),
                 "base": a.get("base") or "main", "body": a.get("body", ""), "draft": bool(a.get("draft"))}
         if not body["head"]:
             raise SystemExit("pr_create 需要 head（如 yxxbc:fix/xxx）")
@@ -475,7 +476,7 @@ def main():
         for inst in targets:
             try:
                 tok = token if inst["id"] == 0 else installation_token(cfg, {**a, "installation_id": inst["id"]})[0]
-                for i in scan_installation(tok, inst, int(a.get("limit") or 100)):
+                for i in scan_installation(tok, inst):
                     rows.append(slim_issue(i))
             except Exception as e:
                 errors.append(f"{inst.get('account',{}).get('login')}: {type(e).__name__}")
@@ -501,7 +502,15 @@ def main():
         else:
             extra = ""
         if a.get("owner"):
-            extra += f" user:{a['owner']}" if not a["owner"].endswith("Team") else f" org:{a['owner']}"
+            qual = "user"
+            try:
+                jwt = jwt_for(cfg, a)
+                if any(i["account"]["login"].lower() == a["owner"].lower()
+                       and i["account"]["type"] == "Organization" for i in installations(jwt)):
+                    qual = "org"
+            except Exception:
+                pass
+            extra += f" {qual}:{a['owner']}"
         endpoint = f"/search/{'repositories' if scope == 'repos' else 'issues' if scope in ('issues','prs') else 'code'}"
         endpoint += f"?q={urllib.parse.quote((q + ' ' + extra).strip())}&per_page={int(a.get('limit') or 20)}"
         s, d = request("GET", endpoint, token)

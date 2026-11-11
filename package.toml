@@ -1,5 +1,5 @@
 [package]
-version = "0.2.0"
+version = "0.2.1"
 name = { en = "GitHub Bot", zh = "GitHub 机器人" }
 summary = { en = "Act as a GitHub App: sign a JWT, get an installation token, then read repos, issues, PRs, releases and files, dispatch workflows and push commits", zh = "以 GitHub App 身份工作：签 JWT 换 installation token，读写仓库、issue、PR、release、文件，触发 workflow" }
 author = "yxxbc"
