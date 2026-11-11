@@ -10,6 +10,7 @@
 #   "app_id":{"type":"string","description":"GitHub App ID; falls back to the config file"},
 #   "key":{"type":"string","description":"Path to the app private key .pem; falls back to the config file"},
 #   "installation_id":{"type":"integer","description":"Installation id; auto-discovered when omitted"},
+#   "auth":{"type":"string","enum":["auto","app","gh"],"description":"Credential source: app (GitHub App installation token), gh (gh CLI login), auto (try app, fall back to gh). Default auto"},
 #   "owner":{"type":"string","description":"Org or user, e.g. Mymiyu-tool"},
 #   "repo":{"type":"string","description":"Repository name"},
 #   "number":{"type":"integer","description":"Issue or PR number"},
@@ -133,6 +134,48 @@ def installation_token(cfg, a):
     return data["token"], int(inst_id)
 
 
+def gh_token():
+    import shutil
+    exe = shutil.which("gh")
+    if not exe:
+        for p in ("/opt/homebrew/bin/gh", "/usr/local/bin/gh", os.path.expanduser("~/.local/bin/gh")):
+            if os.path.exists(p):
+                exe = p
+                break
+    if not exe:
+        return None
+    for args in ([exe, "auth", "token"], [exe, "auth", "token", "--user", "yxxbc"]):
+        proc = subprocess.run(args, capture_output=True, text=True)
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip()
+    return None
+
+
+def resolve_token(cfg, a):
+    """Return (token, kind). kind is 'app' or 'gh'."""
+    mode = (a.get("auth") or cfg.get("auth") or "auto").lower()
+
+    if mode in ("app", "auto"):
+        try:
+            tok, _inst = installation_token(cfg, a)
+            if mode == "app":
+                return tok, "app"
+            # auto: an installation with no selected repositories is useless
+            s, data = request("GET", "/installation/repositories?per_page=1", tok)
+            if s == 200 and data.get("total_count", 0) > 0:
+                return tok, "app"
+        except (SystemExit, RuntimeError):
+            if mode == "app":
+                raise
+
+    if mode in ("gh", "auto"):
+        tok = os.environ.get("GH_TOKEN") or gh_token()
+        if tok:
+            return tok, "gh"
+
+    raise SystemExit("没有可用凭证：App 装不上，也没有 gh 登录态")
+
+
 def repo_path(a, suffix=""):
     owner = a.get("owner")
     repo = a.get("repo")
@@ -146,31 +189,49 @@ def main():
     cfg = config()
     action = a.get("action") or "status"
 
-    token, inst_id = installation_token(cfg, a)
+    token, kind = resolve_token(cfg, a)
 
     if action == "token":
         print(token)
         return
 
     if action == "status":
-        s_app, app = request("GET", "/app", _jwt_only(cfg, a))
-        s_inst, inst = request("GET", f"/app/installations/{inst_id}", _jwt_only(cfg, a))
-        print(json.dumps({
-            "app": {"id": app.get("id"), "slug": app.get("slug"), "name": app.get("name")} if s_app == 200 else app,
-            "installation": {"id": inst_id, "account": inst.get("account", {}).get("login"), "repos": inst.get("repository_selection")} if s_inst == 200 else inst,
-            "token_ok": bool(token),
-        }, ensure_ascii=False, indent=1))
+        if kind == "app":
+            jwt = _jwt_only(cfg, a)
+            inst_id = a.get("installation_id") or cfg.get("installation_id")
+            s_app, app = request("GET", "/app", jwt)
+            if not inst_id:
+                s_list, data = request("GET", "/app/installations", jwt)
+                items = data if isinstance(data, list) else []
+                inst_id = items[0]["id"] if items else None
+            s_inst, inst = request("GET", f"/app/installations/{inst_id}", jwt) if inst_id else (0, {})
+            print(json.dumps({
+                "auth": "app",
+                "app": {"id": app.get("id"), "slug": app.get("slug"), "name": app.get("name")} if s_app == 200 else app,
+                "installation": inst if s_inst != 200 else {"id": inst.get("id"), "account": inst.get("account", {}).get("login")},
+                "token_ok": bool(token),
+            }, ensure_ascii=False, indent=1))
+        else:
+            s, me = request("GET", "/user", token)
+            print(json.dumps({"auth": "gh", "user": me.get("login"), "token_ok": s == 200}, ensure_ascii=False, indent=1))
         return
 
     if action == "installations":
+        if kind != "app":
+            print(json.dumps({"auth": "gh", "note": "当前用的是 gh 登录态，不涉及 App 安装"}, ensure_ascii=False))
+            return
         status, data = request("GET", "/app/installations", _jwt_only(cfg, a))
         items = data if isinstance(data, list) else []
         print(json.dumps([{"id": i["id"], "account": i["account"]["login"], "type": i["account"]["type"]} for i in items], ensure_ascii=False, indent=1))
         return
 
     if action == "repos":
-        status, data = request("GET", "/installation/repositories?per_page=100", token)
-        items = data.get("repositories", []) if isinstance(data, dict) else []
+        if kind == "app":
+            status, data = request("GET", "/installation/repositories?per_page=100", token)
+            items = data.get("repositories", []) if isinstance(data, dict) else []
+        else:
+            status, data = request("GET", "/user/repos?per_page=100&sort=updated", token)
+            items = data if isinstance(data, list) else []
         print(json.dumps([{"full_name": r["full_name"], "private": r["private"], "default_branch": r["default_branch"]} for r in items], ensure_ascii=False, indent=1))
         return
 

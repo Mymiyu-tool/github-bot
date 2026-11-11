@@ -39,6 +39,24 @@ EOF
 
 `app_id` 在 App 的设置页顶部，`installation_id` 可以不填——包会自动去 `/app/installations` 里按 owner 匹配。
 
+## 两套凭证：个人 + 组织同时用
+
+`auth` 参数决定用谁的身份：
+
+| 值 | 行为 |
+|---|---|
+| `auto`（默认） | 先试 App；如果 App 的安装里一个仓库都没勾，自动回退到 `gh` 登录态 |
+| `app` | 强制用 GitHub App 的 installation token（显示 `xxx[bot]`） |
+| `gh` | 强制用本机 `gh auth token`（你自己的身份，能访问个人 + 所有组织仓库） |
+
+所以不需要二选一：
+
+- 组织仓库：`auth` 留空即可，App 没授权仓库时会自动走 `gh`
+- 想要 bot 身份：把 App 装到组织并勾仓库，之后 `auto` 会自动优先用 App
+- 想强制：`{"action": "repos", "auth": "gh"}` 或 `"app"`
+
+App ID 和私钥没配也不影响——`auto` 直接落到 `gh`，只要有 `gh auth login` 过。
+
 ## 动作
 
 | action | 作用 | 关键参数 |
